@@ -1,0 +1,61 @@
+name: iOS unsigned IPA
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ios-unsigned
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+
+jobs:
+  ios:
+    name: iOS (unsigned ipa)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: ios
+
+      - name: 准备 xcodegen 与 cocoapods（镜像一般自带，缺了再装）
+        run: |
+          which xcodegen || brew install xcodegen
+          which pod || brew install cocoapods
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: 生成 iOS 工程
+        run: pnpm tauri ios init --ci
+
+      - name: 构建未签名包
+        run: pnpm tauri ios build --no-sign --ci
+
+      - name: 收集产物
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          find src-tauri -name '*.ipa' -print -exec cp {} artifacts/HGhub-unsigned.ipa \;
+          ls -lh artifacts
+          test -s artifacts/HGhub-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-unsigned-ipa
+          path: artifacts/*
+          if-no-files-found: error
